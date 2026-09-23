@@ -711,7 +711,263 @@
     </div>
 
     <script>
-        (function() {
-            // ---------- STATE ----------
-            let balance = 10000.00;
-            const balanceEl = document.getElementById('balance
+(function () {
+    let balance = 10000;
+    let price = 1.08452;
+    let direction = "CALL";
+    let expiry = 60;
+    let timer = null;
+
+    const canvas = document.getElementById("priceChart");
+    const ctx = canvas.getContext("2d");
+    const balanceEl = document.getElementById("balanceDisplay");
+    const priceEl = document.getElementById("currentPrice");
+    const changeEl = document.getElementById("priceChange");
+    const amountEl = document.getElementById("tradeAmount");
+    const tradesEl = document.getElementById("tradesList");
+    const toast = document.getElementById("toast");
+    const toastMessage = document.getElementById("toastMessage");
+
+    let prices = [];
+
+    for (let i = 0; i < 60; i++) {
+        prices.push(price + (Math.random() - 0.5) * 0.003);
+    }
+
+    function updateBalance() {
+        balanceEl.innerHTML =
+            '<i class="fas fa-dollar-sign"></i>' +
+            balance.toLocaleString(undefined, {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            });
+    }
+
+    function drawChart() {
+        const w = canvas.clientWidth || 600;
+        const h = canvas.clientHeight || 280;
+
+        canvas.width = w * devicePixelRatio;
+        canvas.height = h * devicePixelRatio;
+
+        ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+        ctx.clearRect(0, 0, w, h);
+
+        if (prices.length < 2) return;
+
+        const min = Math.min(...prices);
+        const max = Math.max(...prices);
+        const range = max - min || 0.001;
+
+        // Grid
+        ctx.strokeStyle = "#182233";
+        ctx.lineWidth = 1;
+
+        for (let i = 1; i < 5; i++) {
+            const y = (h / 5) * i;
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(w, y);
+            ctx.stroke();
+        }
+
+        // Chart line
+        ctx.strokeStyle = "#22c55e";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+
+        prices.forEach((p, i) => {
+            const x = (i / (prices.length - 1)) * w;
+            const y = h - ((p - min) / range) * (h - 25) - 10;
+
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+        });
+
+        ctx.stroke();
+
+        // Current price dot
+        const last = prices[prices.length - 1];
+        const x = w;
+        const y = h - ((last - min) / range) * (h - 25) - 10;
+
+        ctx.fillStyle = "#22c55e";
+        ctx.beginPath();
+        ctx.arc(x - 2, y, 4, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    function updatePrice() {
+        const old = price;
+
+        price += (Math.random() - 0.5) * 0.0008;
+        price = Math.max(0.5, price);
+
+        prices.push(price);
+        if (prices.length > 80) prices.shift();
+
+        priceEl.textContent = price.toFixed(5);
+
+        const change = ((price - old) / old) * 100;
+        changeEl.textContent =
+            (change >= 0 ? "+" : "") + change.toFixed(3) + "%";
+
+        changeEl.classList.toggle("negative", change < 0);
+
+        drawChart();
+    }
+
+    function showToast(message) {
+        toastMessage.textContent = message;
+        toast.classList.add("show");
+
+        setTimeout(() => {
+            toast.classList.remove("show");
+        }, 2500);
+    }
+
+    // Higher / Lower selector
+    document.getElementById("buyTypeBtn").onclick = function () {
+        direction = "CALL";
+        this.classList.add("active");
+        document.getElementById("sellTypeBtn").classList.remove("active");
+    };
+
+    document.getElementById("sellTypeBtn").onclick = function () {
+        direction = "PUT";
+        this.classList.add("active");
+        document.getElementById("buyTypeBtn").classList.remove("active");
+    };
+
+    // Quick amounts
+    document.querySelectorAll(".quick-amounts button").forEach(btn => {
+        btn.onclick = function () {
+            amountEl.value = this.dataset.amount;
+        };
+    });
+
+    // Expiration
+    document.querySelectorAll(".expiry-btn").forEach(btn => {
+        btn.onclick = function () {
+            document.querySelectorAll(".expiry-btn")
+                .forEach(b => b.classList.remove("active"));
+
+            this.classList.add("active");
+            expiry = Number(this.dataset.expiry);
+        };
+    });
+
+    // Timeframes
+    document.querySelectorAll(".tf-btn").forEach(btn => {
+        btn.onclick = function () {
+            document.querySelectorAll(".tf-btn")
+                .forEach(b => b.classList.remove("active"));
+
+            this.classList.add("active");
+
+            // Simulated timeframe movement
+            const tf = this.dataset.tf;
+
+            if (tf === "1m") price += (Math.random() - 0.5) * 0.001;
+            if (tf === "5m") price += (Math.random() - 0.5) * 0.002;
+            if (tf === "15m") price += (Math.random() - 0.5) * 0.004;
+            if (tf === "1h") price += (Math.random() - 0.5) * 0.008;
+            if (tf === "1d") price += (Math.random() - 0.5) * 0.015;
+
+            prices.push(price);
+            if (prices.length > 80) prices.shift();
+
+            priceEl.textContent = price.toFixed(5);
+            drawChart();
+        };
+    });
+
+    function placeTrade(type) {
+        const amount = Number(amountEl.value);
+
+        if (!amount || amount <= 0) {
+            showToast("Enter a valid investment amount");
+            return;
+        }
+
+        if (amount > balance) {
+            showToast("Insufficient demo balance");
+            return;
+        }
+
+        balance -= amount;
+        updateBalance();
+
+        const entryPrice = price;
+
+        showToast(
+            type + " trade opened • $" +
+            amount.toFixed(2) +
+            " • " +
+            expiry +
+            " sec"
+        );
+
+        setTimeout(function () {
+            const finalPrice = price;
+
+            const win =
+                type === "CALL"
+                    ? finalPrice > entryPrice
+                    : finalPrice < entryPrice;
+
+            let result;
+
+            if (win) {
+                const profit = amount * 0.92;
+                balance += amount + profit;
+                result = profit;
+            } else {
+                result = -amount;
+            }
+
+            updateBalance();
+
+            const item = document.createElement("div");
+            item.className = "trade-item" + (win ? "" : " loss");
+
+            item.innerHTML =
+                '<span class="trade-asset">EUR/USD</span>' +
+                '<span class="trade-amount">$' +
+                amount.toFixed(2) +
+                '</span>' +
+                '<span class="trade-result">' +
+                (result >= 0 ? "+" : "") +
+                "$" +
+                result.toFixed(2) +
+                "</span>";
+
+            tradesEl.prepend(item);
+
+            showToast(
+                win
+                    ? "Trade won: +$" + result.toFixed(2)
+                    : "Trade lost: -$" + amount.toFixed(2)
+            );
+        }, expiry * 1000);
+    }
+
+    document.getElementById("callBtn").onclick = function () {
+        placeTrade("CALL");
+    };
+
+    document.getElementById("putBtn").onclick = function () {
+        placeTrade("PUT");
+    };
+
+    window.addEventListener("resize", drawChart);
+
+    updateBalance();
+    drawChart();
+
+    setInterval(updatePrice, 1000);
+})();
+</script>
+
+</body>
+</html>
